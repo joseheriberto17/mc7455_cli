@@ -1,174 +1,91 @@
 package main
 
 import (
-	"bufio"
-	"fmt"
-	"log"
-	"os"
-	"strings"
-	"time"
-
-	"go.bug.st/serial"
+	"github.com/nebulaengineering/mc7455_cli/internal/AtCommand"
+	"github.com/nebulaengineering/mc7455_cli/internal/ui"
 )
+
+// var commands = []string{
+// 	"AT!PCTEMP?\r",
+// 	"AT+CFUN?\r",
+// 	"AT+WANT?\r",
+// 	// "AT+WANT=1\r",
+// 	"AT!GSTATUS?\r",
+// 	"AT+CREG?\r",
+// 	"AT+CGREG?\r",
+// 	"AT!GETBAND?\r",
+// 	"AT+CGDCONT?\r",
+// 	"AT!GPSSTATUS?\r",
+// 	"AT!CUSTOM?\r",
+// 	"AT!GPSSATINFO?\r",
+// 	"AT!ERR\r",
+// 	// "AT!ERR=0\r",
+// 	// "AT!GPSEND=0,255\r",
+// 	// "AT!GPSFIX=1,60,10\r",
+// 	"AT!GPSLOC?\r",
+// }
+
+var SeqCmd = []string{
+	AtCommand.GetVersionDef.Cmd, // "AT!PCVOLT?\r"
+	AtCommand.PcVoltDef.Cmd,     // "AT!PCVOLT?\r"
+	AtCommand.PcTempDef.Cmd,     // "AT!PCTEMP?\r"
+	AtCommand.CFunDef.Cmd,       // "AT+CFUN?\r"
+	AtCommand.WantDef.Cmd,       // "AT+WANT?\r"
+	AtCommand.CRegDef.Cmd,       // "AT+CREG?\r"
+	AtCommand.CGRegDef.Cmd,      // "AT+CGREG?\r"
+	AtCommand.GetBandDef.Cmd,    // "AT!GETBAND?\r"
+	AtCommand.CGDContDef.Cmd,    // "AT+CGDCONT?\r"
+	// Añade aquí los que falten…
+}
+
+// ---------------- Información del MÓDEM ----------------
+var rowsModem = [][]string{
+	{"Versión de firmware (esperado SWI9X30C_02.38.00.00)", "02.36.03.00", "✔"},
+	{"Voltaje de alimentación (3.3-4.1 V)", "3.71 V", "✔"},
+	{"Temperatura del módem (-20…85 °C)", "34 °C", "✔"},
+	{"Contador de errores módem (!ERR)", "0", "✔"},
+	{"-----------------------------", "-------", "-------"},
+	{"Registrado CS (voz)", "Sí", "✔"},
+	{"Registrado PS (datos)", "Sí", "✔"},
+	{"Tecnología / Banda", "LTE B7", "✔"},
+	{"Agregación de portadoras (CA)", "B7+B28", "✔"},
+	{"RSRP (≥ -110 dBm)", "-95 dBm", "✔"},
+	{"SINR (≥ 5 dB)", "14.3 dB", "✔"},
+	{"RSSI (≥ -85 dBm)", "-69 dBm", "✔"},
+	{"-----------------------------", "-------", "-------"},
+	{"Alimentación antena GPS (+WANT)", "ON", "✔"},
+	{"GPS habilitado", "Sí", "✔"},
+	{"Satélites en vista (≥ 4)", "6", "✔"},
+	{"Sats con SNR > 25 dB (≥ 4)", "5", "✔"},
+	{"Tipo de fix (2D/3D)", "3D", "✔"},
+	{"DOP horizontal (≤ 2.5)", "1.2", "✔"},
+}
 
 func main() {
 
-	// Abrir el puerto objetivo (ajustar según tu sistema)
-	mode := &serial.Mode{
-		BaudRate: 115200,
-		Parity:   serial.NoParity,
-		DataBits: 8,
-		StopBits: serial.OneStopBit,
+	tbl := ui.Frontend{
+		Title: "Diagnóstico MC7455 - visión general",
+		Head:  []string{"Chequeo", "Valor", "OK?"},
 	}
-	port, err := serial.Open("/dev/ttyMODEM", mode)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer port.Close()
+	tbl.RenderTitle()
+	tbl.Render(rowsModem)
 
-	// Limpiar el buffer antes de comenzar
-	port.ResetInputBuffer()
-	port.SetReadTimeout(2 * time.Second)
+	// -------------------------------------------------------------------
 
-	// Crear lector de consola
-	consoleReader := bufio.NewReader(os.Stdin)
+	// serialport := PortCustom.NewSerialPort("/dev/ttyMODEM", 115200)
 
-	for {
-		fmt.Print("\033[H\033[2J")
-		fmt.Println("Herramienta de Diagnostico y configuracion de GPS")
-		fmt.Println("\nAcciones especiales")
-		fmt.Println("\t1.  Habilitar permisos para comando restringidos")
-		fmt.Println("\t2.  Realizar un Reinicio completo del modem")
-		fmt.Println("\t3.  Realizar un Reinicio parcial (solo software) del modem")
+	// //abrir puerto (maneja el error internamente)
+	// serialport.OpenePort()
 
-		fmt.Println("\nEstado General del módem y alimentacion:")
-		fmt.Println("\t4.  Verificar si el modem esta Operativo (General)")
-		fmt.Println("\t5.  Verificar voltaje de alimentacion del modem (3,3-4,1 V es OK)")
-		fmt.Println("\t6.  Verificar temperatura de modem")
-		fmt.Println("\t7.  Verificar nivel fucional de modem en general.")
+	// // // for  i  := 0; i < len(commands); i++ {
+	// data, _ := serialport.SendCommand([]byte(SeqCmd[0]), 2*time.Second)
+	// fmt.Print("\nsalida: ")
+	// fmt.Printf("%q", data)
 
-		fmt.Println("\nAlimentación de la antena GPS:")
-		fmt.Println("\t8.  Verificar la alimentacion de 3.3V del modem hacia la antena GPS")
-		fmt.Println("\t9.  Habilitar la alimentacion de 3.3V del modem hacia la antena GPS")
+	// getversion, lencht, _ := AtCommand.GetVersionDef.Extract(data)
 
-		fmt.Println("\nInformacion de la  RED MOVIL:")
-		fmt.Println("\t10.  Verificar el estado general en la RED MOVIL")
-		fmt.Println("\t11. Verificar estado de registro en red de datos (PS)") // cgreg
-		fmt.Println("\t12. Verificar estado de registro en red clásica (CS).") // cgreg
-		fmt.Println("\t13. Muestra la banda o agregación LTE/NR en servicio")
-		fmt.Println("\t14. Lista perfiles PDP (CID, tipo IP, APN)")
+	// fmt.Printf("len: %d status %s", lencht, getversion.Version)
 
-		fmt.Println("\nInformacion de GPS")
-		fmt.Println("\t15. Verificar si el GPS del modem esta Operativo")
-		fmt.Println("\t16. Verificar que Capacidades del modem para el GPS estan habilitados")
-		fmt.Println("\t17. Verificar numero de Satélites y su señal SNR")
-
-		fmt.Println("\nRegistros de errores")
-		fmt.Println("\t18. ver logs de los errores registrados")
-		fmt.Println("\t19. Borrar logs de los errores registrados")
-
-		fmt.Println("\nIniciar fix compatible y monitorizar")
-		fmt.Println("\t20. Iniciar búsqueda GPS (paso 1) ")
-		fmt.Println("\t21. Iniciar búsqueda GPS (paso 2) ")
-		fmt.Println("\t22. Determina posicion final del GPS")
-
-		fmt.Println("\t23. Salir del programa")
-		fmt.Print(">> ")
-
-		input, _ := consoleReader.ReadString('\n')
-		input = strings.TrimSpace(input)
-
-		if input == "23" {
-			fmt.Println("Saliendo del programa.")
-			break
-		}
-
-		// Mapa de comandos AT
-		atCommands := map[string]string{
-			// Acciones especiales
-			"1": "AT!ENTERCND=\"A710\"\r",
-			"2": "AT!RESET\r",
-			"3": "AT+CFUN=1,1\r",
-			// Estado General del módem y alimentacion
-			"4": "AT!PCINFO?\r",
-			"5": "AT!PCVOLT?\r",
-			"6": "AT!PCTEMP?\r",
-			"7": "AT+CFUN?\r",
-			// Alimentación de la antena GPS
-			"8": "AT+WANT?\r",
-			"9": "AT+WANT=1\r",
-			// Informacion de la  RED MOVIL:
-			"10": "AT!GSTATUS?\r",
-			"11": "AT+CREG?\r",
-			"12": "AT+CGREG?\r",
-			"13": "AT!GETBAND?\r",
-			"14": "AT+CGDCONT?\r",
-			//informacion de GPS
-			"15": "AT!GPSSTATUS?\r",
-			"16": "AT!CUSTOM?\r",
-			"17": "AT!GPSSATINFO?\r",
-			// Registros de errores
-			"18": "AT!ERR\r",
-			"19": "AT!ERR=0\r",
-			// Iniciar fix compatible y monitorizar
-			"20": "AT!GPSEND=0,255\r",
-			"21": "AT!GPSFIX=1,60,10\r",
-			"22": "AT!GPSLOC?\r",
-		}
-		cmd, ok := atCommands[input]
-
-		// atiende una entrada no valida
-		if !ok {
-			fmt.Println("Opción no válida.")
-			continue
-		}
-
-		// Limpiar buffer antes de enviar
-		port.ResetInputBuffer()
-
-		// Enviar comando
-		_, err := port.Write([]byte(cmd))
-		if err != nil {
-			log.Println("Error al escribir en el puerto:", err)
-			continue
-		}
-
-		// Leer respuesta
-		scanner := bufio.NewScanner(port)
-		scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-			if i := strings.IndexAny(string(data), "\r\n"); i >= 0 {
-				return i + 1, data[:i], nil
-			}
-			return 0, nil, nil
-		})
-
-		// Antes de leer espera 2 segundos
-		fmt.Println("Respuesta del dispositivo:")
-		timeout := time.After(2 * time.Second)
-
-	ReadingLoop:
-		for {
-			select {
-			case <-timeout:
-				break ReadingLoop
-			default:
-				if scanner.Scan() {
-					line := strings.TrimSpace(scanner.Text())
-					if line != "" {
-						fmt.Println(line)
-						if line == "OK" {
-							break ReadingLoop
-						}
-					}
-				}
-			}
-		}
-		// atiende el error de lectura
-		if scanner.Err() != nil {
-			log.Println("Error leyendo desde el puerto:", scanner.Err())
-		}
-
-		fmt.Print("Presione ENTER para continuar: ")
-		consoleReader.ReadString('\n')
-	}
+	// }
+	// -------------------------------------------------------
 }
