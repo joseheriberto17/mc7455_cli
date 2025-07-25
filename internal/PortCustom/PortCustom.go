@@ -54,8 +54,8 @@ func (dev *SerialPort) OpenePort() {
 		log.Fatalf("error al limpiar el buffer de salida al puerto %s: %v", dev.Name, err)
 	}
 
-	// test
-	fmt.Printf("puerto abierto %s\n\r", dev.Name)
+	// // test
+	// fmt.Printf("puerto abierto %s\n\r", dev.Name)
 }
 
 // cierra el puerto
@@ -82,8 +82,8 @@ func (dev *SerialPort) Write(cmd []byte) (err error) {
 		return err
 	}
 
-	// test
-	fmt.Printf("escritura por el puerto: %s, %s\n\r", dev.Name, cmd)
+	// // test
+	// fmt.Printf("escritura por el puerto: %s, %s\n\r", dev.Name, cmd)
 	return err
 }
 
@@ -108,12 +108,11 @@ func (dev *SerialPort) Write_Error(cmd []byte) {
 func (dev *SerialPort) ReadUntil(timeout time.Duration) (string, error) {
 	reader := bufio.NewReader(dev.Port)
 	dev.Port.SetReadTimeout(timeout)
-	fmt.Println("lectura en crudo:")
 
 	var sb strings.Builder
 	for {
 		line, err := reader.ReadString('\n')
-		fmt.Printf("%q", line)
+
 		if err != nil {
 			fmt.Printf("error de ReadString: %v\n", err)
 			break
@@ -124,6 +123,7 @@ func (dev *SerialPort) ReadUntil(timeout time.Duration) (string, error) {
 			break
 		}
 	}
+	// fmt.Printf("lectura en crudo: %q\n", sb.String())
 	return sb.String(), nil
 
 }
@@ -134,7 +134,7 @@ func (dev *SerialPort) SendCommand(cmd []byte, timeout time.Duration) (string, e
 		return "", fmt.Errorf("error al enviar comando: %w", err)
 	}
 
-	// test
-	fmt.Printf("comando enviado por el puerto: %s\n\r", dev.Name)
+	// // test
+	// fmt.Printf("comando enviado por el puerto: %s\n\r", dev.Name)
 	return dev.ReadUntil(timeout)
 }
