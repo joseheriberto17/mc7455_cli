@@ -9,6 +9,12 @@ import (
 	"strings"
 )
 
+// En este archivo se definen los comandos AT que se ejecutarán y se extraeran los datos de sus respuestas.
+
+// se genera const <nombre>Pattern para cada comando AT
+// y se genera una variable <nombre>Def que es un ATCommandDef[T] con
+// el comando AT, el patrón y la función de parseo correspondiente
+
 // Getversion representa la versión de firmware del módem.
 type Getversion struct{ Version string }
 
@@ -330,20 +336,28 @@ var GPSStatusDef = ATCommandDef[GPSStatus]{
 }
 
 // ---------------------------------------------------------------------------------------
-
+// Row representa una fila de la tabla de resultados
+// Contiene una etiqueta, un valor y un indicador de éxito (OK)
+// Esta estructura se utiliza para almacenar los resultados de los comandos AT
+// y se convierte en una fila de la tabla que se muestra al usuario
 type Row struct {
 	Label string
 	Value string
 	OK    bool
 }
 
-// Ejecutor genérico de un comando AT:
+// ATExec es una interfaz que define un comando AT y su ejecución
+// Cada comando AT debe implementar esta interfaz para ser ejecutado
+// y devolver un resultado en forma de fila (Row)
 type ATExec interface {
 	Cmd() string
 	Run(raw string) ([]Row, error)
 }
 
-// envuelve un *ATCommandDef[T] y lo hace cumplir ATExec
+// AttrStep es un paso de ejecución de comando AT con atributos específicos
+// T es el tipo de dato que se espera extraer de la respuesta del comando AT
+// Por ejemplo, puede ser un string, int, struct, etc.
+// Este patrón se usa para escanear la respuesta del comando AT y extraer las variables necesarias.
 type AttrStep[T any] struct {
 	Def   *ATCommandDef[T]
 	Label string
@@ -362,14 +376,21 @@ func (s AttrStep[T]) Run(raw string) ([]Row, error) {
 	return []Row{r.toRow()}, nil
 }
 
+// convierte singleRow a Row
 type singleRow struct {
 	label string
 	value string
 	ok    bool
 }
 
+// toRow convierte singleRow a Row
+// Esta función es necesaria para que singleRow implemente la interfaz Row
 func (r singleRow) toRow() Row { return Row{r.label, r.value, r.ok} }
 
+// Lista de comandos AT a ejecutar
+// Cada comando es un paso con su etiqueta, valor y condición de éxito
+// Se ejecutan en el orden en que están definidos
+// Se pueden agregar más pasos según sea necesario
 var SeqCmd = []ATExec{
 
 	AttrStep[Getversion]{
