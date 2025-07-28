@@ -4,9 +4,9 @@ package AtCommand
 import "fmt"
 
 type ATCommandDef[T any] struct {
-	Cmd     string                  // Lo que se envía al módem
-	Pattern string                  // Plantilla para fmt.Sscanf
-	Parse   func(string) (T, error) // Convierte la respuesta en un struct
+	Cmd     string
+	Pattern string // Plantilla para fmt.Sscanf
+	Parse   func(resp string) (T, error)
 }
 
 func (def *ATCommandDef[T]) Extract(resp string) (T, error) {

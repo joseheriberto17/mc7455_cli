@@ -4,15 +4,13 @@ package AtCommand
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
 // Getversion representa la versión de firmware del módem.
 type Getversion struct{ Version string }
-
-func (g Getversion) Label() string { return "Versión de firmware (esperado SWI9X30C_02.38.00.00)" }
-func (g Getversion) Value() string { return g.Version }
-func (g Getversion) OK() bool      { return g.Version == "SWI9X30C_02.38.00.00" }
 
 const getversionPattern = "AT+GMR\r\r\n%s "
 
@@ -37,10 +35,6 @@ type PcVolt struct {
 	MilliV int
 	ADC    int
 }
-
-func (v PcVolt) Label() string { return "Voltaje de alimentación (3.3-4.1 V)" }
-func (v PcVolt) Value() string { return fmt.Sprintf("%.2f V", float64(v.MilliV)/1000) }
-func (v PcVolt) OK() bool      { f := float64(v.MilliV) / 1000; return f >= 3.3 && f <= 4.1 }
 
 const pcvoltPattern = "AT!PCVOLT?\r\r\nVolt state: %s\r\nPower supply voltage: %d mV (ADC: %d)"
 
@@ -67,10 +61,6 @@ type PcTemp struct {
 	Temp  float32
 }
 
-func (t PcTemp) Label() string { return "Temperatura del módem (-20 a 85 °C)" }
-func (t PcTemp) Value() string { return fmt.Sprintf("%d °C", int(t.Temp)) }
-func (t PcTemp) OK() bool      { return t.Temp >= -20 && t.Temp <= 85 }
-
 const pctempPattern = "AT!PCTEMP?\r\r\nTemp state: %s\r\nTemperature: %f C"
 
 var PcTempDef = ATCommandDef[PcTemp]{
@@ -89,38 +79,34 @@ var PcTempDef = ATCommandDef[PcTemp]{
 	},
 }
 
-// ContErr representa el contador de errores del módem.
-type ContErr struct {
-	value int
-}
+// // ContErr representa el contador de errores del módem.
+// type ContErr struct {
+// 	value int
+// }
 
-func (e ContErr) Label() string { return "Contador de errores módem (!ERR)" }
-func (e ContErr) Value() string { return fmt.Sprintf("%d", e.value) }
-func (e ContErr) OK() bool      { return e.value == 0 }
+// func (e ContErr) Label() string { return "Contador de errores módem (!ERR)" }
+// func (e ContErr) Value() string { return fmt.Sprintf("%d", e.value) }
+// func (e ContErr) OK() bool      { return e.value == 0 }
 
-const errPattern = "AT!ERR\r\r\n%02d   %02x %s %05d"
+// const errPattern = "AT!ERR\r\r\n%02d   %02x %s %05d"
 
-var ContErrDef = ATCommandDef[ContErr]{
-	Cmd:     "AT!ERR?\r",
-	Pattern: errPattern,
-	Parse: func(resp string) (ContErr, error) {
-		var out ContErr
-		n, _ := fmt.Sscanf(resp, errPattern,
-			&out.value)
+// var ContErrDef = ATCommandDef[ContErr]{
+// 	Cmd:     "AT!ERR?\r",
+// 	Pattern: errPattern,
+// 	Parse: func(resp string) (ContErr, error) {
+// 		var out ContErr
+// 		n, _ := fmt.Sscanf(resp, errPattern,
+// 			&out.value)
 
-		if condition := n == 0; condition {
-			out.value = 0
-		}
-		return out, nil
-	},
-}
+// 		if condition := n == 0; condition {
+// 			out.value = 0
+// 		}
+// 		return out, nil
+// 	},
+// }
 
 // CFun representa el modo de operatividad general del módem.
 type CFun struct{ Mode int }
-
-func (c CFun) Label() string { return "Operatividad general del modem (AT+CFUN)" }
-func (c CFun) Value() string { return fmt.Sprintf("%d", c.Mode) }
-func (c CFun) OK() bool      { return c.Mode != 0 }
 
 const cfunPattern = "AT+CFUN?\r\r\n+CFUN: %d"
 
@@ -140,10 +126,6 @@ var CFunDef = ATCommandDef[CFun]{
 
 // Want representa la alimentación de la antena GPS del módem.
 type Want struct{ value int }
-
-func (w Want) Label() string { return "Alimentación antena GPS (AT+WANT)" }
-func (w Want) Value() string { return fmt.Sprintf("%d", w.value) }
-func (w Want) OK() bool      { return w.value == 1 }
 
 const wantPattern = "AT+WANT?\r\r\n+WANT: %d"
 
@@ -166,10 +148,6 @@ type CReg struct {
 	N    int
 	Stat int
 }
-
-func (c CReg) Label() string { return "Registrado CS (voz) (AT+CREG)" }
-func (c CReg) Value() string { return fmt.Sprintf("%d", c.Stat) }
-func (c CReg) OK() bool      { return c.Stat == 1 }
 
 const cgregPattern = "AT+CGREG?\r\r\n+CGREG: %d,%d"
 
@@ -195,10 +173,6 @@ type CGReg struct {
 	Stat int
 }
 
-func (c CGReg) Label() string { return "Registrado PS (datos) (AT+CGREG)" }
-func (c CGReg) Value() string { return fmt.Sprintf("%d", c.Stat) }
-func (c CGReg) OK() bool      { return c.Stat == 1 }
-
 const cregPattern = "AT+CREG?\r\r\n+CREG: %d,%d"
 
 var CRegDef = ATCommandDef[CReg]{
@@ -220,10 +194,6 @@ var CRegDef = ATCommandDef[CReg]{
 // GetBand representa la banda activa del módem.
 type GetBand struct{ Band string }
 
-func (g GetBand) Label() string { return "Banda activa (AT!GETBAND)" }
-func (g GetBand) Value() string { return g.Band }
-func (g GetBand) OK() bool      { return !strings.Contains(g.Band, "No") }
-
 const getbandPattern = "AT!GETBAND?\r\r\n!GETBAND: %s" // descripción de banda activa  :contentReference[oaicite:2]{index=2}
 
 var GetBandDef = ATCommandDef[GetBand]{
@@ -243,69 +213,59 @@ var GetBandDef = ATCommandDef[GetBand]{
 
 // CGDCont representa un contexto PDP (Packet Data Protocol) del módem.
 type CGDCont struct {
-	PDPType int
-	APN     string
-	// IP      string
-	// P1, P2  int
-	// P3, P4  int
+	APN string
 }
-
-func (c CGDCont) Label() string { return "PDP context / APN (AT+CGDCONT)" }
-func (c CGDCont) Value() string {
-	if strings.Contains(c.APN, "NEBULAENGINEERING.tigo.com") {
-		return c.APN
-
-	}
-	return "No APN"
-}
-func (c CGDCont) OK() bool { return strings.Contains(c.APN, "NEBULAENGINEERING.tigo.com") }
-
-const cgdcontPattern = "AT+CGDCONT?\r\r\n+CGDCONT: %d,\"IP\",\"%s" //\",\"%*s\",%*d,%*d,%*d,%*d"
 
 var CGDContDef = ATCommandDef[CGDCont]{
-	Cmd:     "AT+CGDCONT?\r",
-	Pattern: cgdcontPattern,
-	Parse: func(r string) (CGDCont, error) {
+	Cmd: "AT+CGDCONT?\r",
+	Parse: func(resp string) (CGDCont, error) {
 		var out CGDCont
-		n, _ := fmt.Sscanf(r, cgdcontPattern,
-			&out.PDPType, &out.APN)
-		// ,&out.IP,&out.P1, &out.P2, &out.P3, &out.P4)
+		// Captura el 3er campo entre comillas (el APN) de líneas +CGDCONT:
+		var reCGDCONT_APN = regexp.MustCompile(`\+CGDCONT:\s*\d+,"[^"]*","([^"]+)"`)
 
-		if condition := n == 0; condition {
-			out.PDPType = 0
-			out.APN = "Null"
-			// out.IP = "Null"
-			// out.P1 = 0
-			// out.P2 = 0
-			// out.P3 = 0
-			// out.P4 = 0
+		if m := reCGDCONT_APN.FindStringSubmatch(resp); m != nil {
+			out.APN = m[1]
 		}
-
 		return out, nil
 	},
 }
 
 // CGDCont representa un contexto PDP (Packet Data Protocol) del módem.
 type GPSAtInfo struct {
-	Nsat int
+	InView int
+	AvgSNR float64
+	Count  int
 }
-
-func (c GPSAtInfo) Label() string { return "Numero de satelites (> 6)" }
-func (c GPSAtInfo) Value() string { return fmt.Sprintf("%d", c.Nsat) }
-func (c GPSAtInfo) OK() bool      { return c.Nsat > 6 }
 
 const gpssatinfoPattern = "AT!GPSSATINFO?\r\r\nSatellites in view:  %d"
 
 var GPSAtInfoDef = ATCommandDef[GPSAtInfo]{
 	Cmd:     "AT!GPSSATINFO?\r",
 	Pattern: gpssatinfoPattern,
-	Parse: func(r string) (GPSAtInfo, error) {
+	Parse: func(resp string) (GPSAtInfo, error) {
 		var out GPSAtInfo
-		n, _ := fmt.Sscanf(r, gpssatinfoPattern, &out.Nsat)
-		if condition := n == 0; condition {
-			out.Nsat = 0
+		var (
+			reSatCount = regexp.MustCompile(`Satellites in view:\s*(\d+)`)
+			reSNR      = regexp.MustCompile(`SNR:\s*(\d+)`)
+		)
+		//
+		if m := reSatCount.FindStringSubmatch(resp); m != nil {
+			out.InView, _ = strconv.Atoi(m[1])
 		}
 
+		snrs := reSNR.FindAllStringSubmatch(resp, -1)
+		var sum int
+		for _, m := range snrs {
+			n, err := strconv.Atoi(m[1])
+			if err != nil {
+				continue
+			}
+			sum += n
+			out.Count++
+		}
+		if out.Count > 0 {
+			out.AvgSNR = float64(sum) / float64(out.Count)
+		}
 		return out, nil
 	},
 }
@@ -320,10 +280,6 @@ type GStatus struct {
 	// 	PSState string
 	// 	LTEBand string
 }
-
-func (g GStatus) Label() string { return "Estado del módem en la RED (AT!GSTATUS)" }
-func (g GStatus) Value() string { return g.Mode }
-func (g GStatus) OK() bool      { return g.Mode == "ONLINE" }
 
 const gstatusPattern = "AT!GSTATUS?\r\r\n!GSTATUS: \r\nCurrent Time:  %d\t\tTemperature: %d\r\nReset Counter: %d\t\tMode:        %s         " //\r\nSystem mode:   %s        \tPS state:    %s     \r\nLTE band:      %s     \t\tLTE bw:      %d MHz  \r\n" //LTE Rx chan:   %d\t\tLTE Tx chan: %d\r\nLTE CA state:  %s\r\nEMM state:     %s     \t%s \r\nRRC state:     %s  \r\nIMS reg state: %s  \t\t\r\n\r\nPCC RxM RSSI:  %d\t\tRSRP (dBm):  %d\r\nPCC RxD RSSI:  %d\t\tRSRP (dBm):  %d\r\nTx Power:      %s\t\tTAC:         %s\r\nRSRQ (dB):     %f\t\tCell ID:     %s\r\nSINR (dB):      %d\r\n\r\n\r\nOK\r\n"
 
@@ -355,10 +311,6 @@ type GPSStatus struct {
 
 }
 
-func (g GPSStatus) Label() string { return "Estado del GPS (AT!GPSSTATUS)" }
-func (g GPSStatus) Value() string { return fmt.Sprint(g.Status) }
-func (g GPSStatus) OK() bool      { return g.Status != -1 }
-
 // -----------------------AT!GPSSTATUS?\r\r\nCurrent time: %*d %*d %*d %*d %*d:%*d:%*d\r\n\r\n%*d %*d %*d %*d %*d:%*d:%*d Last Fix Status    = NONE
 const gpsstatusPattern = "AT!GPSSTATUS?\r\r\nCurrent time: %*s %d" // %*d %*d %*d:%*d:%*d\r\n\r\n%*d %*d %*d %*d %*d:%*d:%*d Last Fix Status    = %s"
 
@@ -377,50 +329,129 @@ var GPSStatusDef = ATCommandDef[GPSStatus]{
 	},
 }
 
-type raws interface {
-	Label() string
-	Value() string
-	OK() bool
-}
-
 // ---------------------------------------------------------------------------------------
+
+type Row struct {
+	Label string
+	Value string
+	OK    bool
+}
 
 // Ejecutor genérico de un comando AT:
 type ATExec interface {
-	Cmd() string                  // qué enviar al módem
-	Run(raw string) (raws, error) // cómo convertir la respuesta
+	Cmd() string
+	Run(raw string) ([]Row, error)
 }
 
 // envuelve un *ATCommandDef[T] y lo hace cumplir ATExec
-type ExecWrap[T raws] struct {
-	def *ATCommandDef[T]
+type AttrStep[T any] struct {
+	Def   *ATCommandDef[T]
+	Label string
+	Value func(T) string
+	OK    func(T) bool
 }
 
-func (w ExecWrap[T]) Cmd() string { return w.def.Cmd }
+func (s AttrStep[T]) Cmd() string { return s.Def.Cmd }
 
-func (w ExecWrap[T]) Run(raw string) (raws, error) {
-	v, err := w.def.Parse(raw) // v es tipo T
+func (s AttrStep[T]) Run(raw string) ([]Row, error) {
+	v, err := s.Def.Parse(raw)
 	if err != nil {
 		return nil, err
 	}
-	return any(v).(raws), nil // garantiza que T implementa raws
+	r := singleRow{s.Label, s.Value(v), s.OK(v)}
+	return []Row{r.toRow()}, nil
 }
 
-var SeqCmd = []ATExec{
-	ExecWrap[Getversion]{&GetVersionDef},
-	ExecWrap[PcVolt]{&PcVoltDef},
-	ExecWrap[PcTemp]{&PcTempDef},
-	ExecWrap[CFun]{&CFunDef},
-	ExecWrap[GStatus]{&GStatusDef},
-	// ExecWrap[ContErr]{&ContErrDef},
-	ExecWrap[CGReg]{&CGRegDef},
-	ExecWrap[CReg]{&CRegDef},
-	ExecWrap[GetBand]{&GetBandDef},
+type singleRow struct {
+	label string
+	value string
+	ok    bool
+}
 
-	ExecWrap[Want]{&WantDef},
-	ExecWrap[CGDCont]{&CGDContDef},
-	// ExecWrap[GPSStatus]{&GPSStatusDef},
-	ExecWrap[GPSAtInfo]{&GPSAtInfoDef},
+func (r singleRow) toRow() Row { return Row{r.label, r.value, r.ok} }
+
+var SeqCmd = []ATExec{
+
+	AttrStep[Getversion]{
+		Def:   &GetVersionDef,
+		Label: "Versión de firmware (esperado SWI9X30C_02.38.00.00)",
+		Value: func(v Getversion) string { return v.Version },
+		OK:    func(v Getversion) bool { return v.Version == "SWI9X30C_02.38.00.00" },
+	},
+	AttrStep[PcVolt]{
+		Def:   &PcVoltDef,
+		Label: "Estado de voltaje",
+		Value: func(v PcVolt) string { return v.State },
+		OK:    func(v PcVolt) bool { return v.State == "Normal" },
+	},
+	AttrStep[PcVolt]{
+		Def:   &PcVoltDef,
+		Label: "Voltaje de alimentación (3.3-4.1 V)",
+		Value: func(v PcVolt) string { return fmt.Sprintf("%.2f V", float64(v.MilliV)/1000) },
+		OK:    func(v PcVolt) bool { f := float64(v.MilliV) / 1000; return f >= 3.3 && f <= 4.1 },
+	},
+	AttrStep[PcTemp]{
+		Def:   &PcTempDef,
+		Label: "Temperatura del módem (-20 a 85 °C)",
+		Value: func(v PcTemp) string { return fmt.Sprintf("%d °C", int(v.Temp)) },
+		OK:    func(v PcTemp) bool { return v.Temp >= -20 && v.Temp <= 85 },
+	},
+	AttrStep[CFun]{
+		Def:   &CFunDef,
+		Label: "Modo de operatividad general del módem (AT+CFUN)",
+		Value: func(v CFun) string { return fmt.Sprintf("%d", v.Mode) },
+		OK:    func(v CFun) bool { return v.Mode != 0 },
+	},
+	AttrStep[CGReg]{
+		Def:   &CGRegDef,
+		Label: "Registrado en la red celular (voz) (AT+CREG)",
+		Value: func(v CGReg) string { return fmt.Sprintf("%d", v.Stat) },
+		OK:    func(v CGReg) bool { return v.Stat == 1 },
+	},
+	AttrStep[CReg]{
+		Def:   &CRegDef,
+		Label: "Registrado en la red celular (datos) (AT+CGREG)",
+		Value: func(v CReg) string { return fmt.Sprintf("%d", v.Stat) },
+		OK:    func(v CReg) bool { return v.Stat == 1 },
+	},
+
+	AttrStep[GetBand]{
+		Def:   &GetBandDef,
+		Label: "Banda activa (AT!GETBAND)",
+		Value: func(v GetBand) string { return v.Band },
+		OK:    func(v GetBand) bool { return !strings.Contains(v.Band, "No") },
+	},
+	AttrStep[CGDCont]{
+		Def:   &CGDContDef,
+		Label: "APN (AT+CGDCONT)",
+		Value: func(v CGDCont) string {
+			if strings.Contains(v.APN, "NEBULAENGINEERING.tigo.com") {
+				return v.APN
+			}
+			return "No APN"
+		},
+		OK: func(v CGDCont) bool { return strings.Contains(v.APN, "NEBULAENGINEERING.tigo.com") },
+	},
+	AttrStep[GPSAtInfo]{
+		Def:   &GPSAtInfoDef,
+		Label: "Número de satélites visibles (> 6)",
+		Value: func(v GPSAtInfo) string { return fmt.Sprintf("%d", v.InView) },
+		OK:    func(v GPSAtInfo) bool { return v.InView > 6 },
+	},
+	AttrStep[GPSAtInfo]{
+		Def:   &GPSAtInfoDef,
+		Label: "SNR promedio de satélites visibles (> 20 dB)",
+		Value: func(v GPSAtInfo) string { return fmt.Sprintf("%.2f dB", v.AvgSNR) },
+		OK:    func(v GPSAtInfo) bool { return v.AvgSNR > 20 },
+	},
+	AttrStep[Want]{
+		Def:   &WantDef,
+		Label: "Alimentación de la antena GPS (AT+WANT)",
+		Value: func(v Want) string { return fmt.Sprintf("%d", v.value) },
+		OK:    func(v Want) bool { return v.value == 1 },
+	},
+
+	// …aquí agregas más atributos de otros structs, en el orden que quieras…
 }
 
 // fecha-hora y estado  :contentReference[oaicite:3]{index=3}
