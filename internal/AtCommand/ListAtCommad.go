@@ -16,9 +16,14 @@ import (
 // el comando AT, el patrón y la función de parseo correspondiente
 
 // Getversion representa la versión de firmware del módem.
-type Getversion struct{ Version string }
+type Getversion struct {
+	VersionA int8
+	VersionB int8
+	VersionC int8
+	VersionD int8
+}
 
-const getversionPattern = "AT+GMR\r\r\n%s "
+const getversionPattern = "AT+GMR\r\r\nSWI9X30C_%d.%d.%d.%d"
 
 var GetVersionDef = ATCommandDef[Getversion]{
 	Cmd:     "AT+GMR\r",
@@ -26,10 +31,13 @@ var GetVersionDef = ATCommandDef[Getversion]{
 	Parse: func(r string) (Getversion, error) {
 		var out Getversion
 		n, _ := fmt.Sscanf(r, getversionPattern,
-			&out.Version)
+			&out.VersionA, &out.VersionB)
 
 		if condition := n == 0; condition {
-			out.Version = "Null"
+			out.VersionA = -1
+			out.VersionB = -1
+			out.VersionC = -1
+			out.VersionD = -1
 		}
 		return out, nil
 	},
@@ -279,10 +287,13 @@ var GPSAtInfoDef = ATCommandDef[GPSAtInfo]{
 // GStatus representa el estado del módem según el comando AT!GSTATUS.
 type GStatus struct {
 	Time   int
-	Temp   int
 	Creset int
 	Mode   string
-	// 	State   string
+	State  string
+	SysPS  string
+	RSRP   int
+	RSRQ   float64
+	SINR   float64
 	// 	PSState string
 	// 	LTEBand string
 }
@@ -292,21 +303,36 @@ const gstatusPattern = "AT!GSTATUS?\r\r\n!GSTATUS: \r\nCurrent Time:  %d\t\tTemp
 var GStatusDef = ATCommandDef[GStatus]{
 	Cmd:     "AT!GSTATUS?\r",
 	Pattern: gstatusPattern,
-	Parse: func(r string) (GStatus, error) {
+	Parse: func(resp string) (GStatus, error) {
 		var out GStatus
-		n, _ := fmt.Sscanf(r, gstatusPattern, &out.Time, &out.Temp, &out.Creset,
-			&out.Mode) //, //&out.State, &out.PSState, &out.LTEBand)
+		// normaliza finales de línea por si llegan mezclados
 
-		if condition := n == 0; condition {
-			out.Time = 0
-			out.Temp = 0
-			out.Creset = 0
-			out.Mode = "Null"
-			// out.State = "Null"
-			// out.PSState = "Null"
-			// out.LTEBand = "Null"
+		reTimeTemp := regexp.MustCompile(`Current Time:\s*(\d+)\s+Temperature:\s*(-?\d+)`)
+		reResetMode := regexp.MustCompile(`Reset Counter:\s*(\d+)\s+Mode:\s*([A-Z ]+)`)
+		reSysPS := regexp.MustCompile(`System mode:\s*([A-Za-z0-9 \-]+)\s+PS state:\s*([A-Za-z ]+)`)
+		reRSRP := regexp.MustCompile(`RSRP \(dBm\):\s*([-]?\d+)`)
+		reRSRQ := regexp.MustCompile(`RSRQ \(dB\):\s*([-]?\d+(?:\.\d+)?)`)
+		reSINR := regexp.MustCompile(`SINR \(dB\):\s*([-]?\d+(?:\.\d+)?)`)
+
+		if m := reTimeTemp.FindStringSubmatch(resp); len(m) == 3 {
+			out.Time, _ = strconv.Atoi(m[1])
 		}
-
+		if m := reResetMode.FindStringSubmatch(resp); len(m) == 3 {
+			out.Creset, _ = strconv.Atoi(m[1])
+			out.Mode = strings.TrimSpace(m[2])
+		}
+		if m := reSysPS.FindStringSubmatch(resp); len(m) == 3 {
+			out.SysPS = strings.TrimSpace(m[1])
+		}
+		if m := reRSRP.FindStringSubmatch(resp); len(m) == 2 {
+			out.RSRP, _ = strconv.Atoi(m[1])
+		}
+		if m := reRSRQ.FindStringSubmatch(resp); len(m) == 2 {
+			out.RSRQ, _ = strconv.ParseFloat(m[1], 32)
+		}
+		if m := reSINR.FindStringSubmatch(resp); len(m) == 2 {
+			out.SINR, _ = strconv.ParseFloat(m[1], 32)
+		}
 		return out, nil
 	},
 }
@@ -317,8 +343,7 @@ type GPSStatus struct {
 
 }
 
-// -----------------------AT!GPSSTATUS?\r\r\nCurrent time: %*d %*d %*d %*d %*d:%*d:%*d\r\n\r\n%*d %*d %*d %*d %*d:%*d:%*d Last Fix Status    = NONE
-const gpsstatusPattern = "AT!GPSSTATUS?\r\r\nCurrent time: %*s %d" // %*d %*d %*d:%*d:%*d\r\n\r\n%*d %*d %*d %*d %*d:%*d:%*d Last Fix Status    = %s"
+const gpsstatusPattern = "AT!GPSSTATUS?\r\r\nCurrent time: %*s %d"
 
 var GPSStatusDef = ATCommandDef[GPSStatus]{
 	Cmd:     "AT!GPSSTATUS?\r",
@@ -395,13 +420,20 @@ var SeqCmd = []ATExec{
 
 	AttrStep[Getversion]{
 		Def:   &GetVersionDef,
-		Label: "Versión de firmware (esperado SWI9X30C_02.38.00.00)",
-		Value: func(v Getversion) string { return v.Version },
-		OK:    func(v Getversion) bool { return v.Version == "SWI9X30C_02.38.00.00" },
+		Label: "Versión de firmware (firmware esperado SWI9X30C_02.33.00.00)",
+		Value: func(v Getversion) string {
+			return fmt.Sprintf("SWI9X30C_%d.%d.%d.%d", v.VersionA, v.VersionB, v.VersionC, v.VersionD)
+		},
+		OK: func(v Getversion) bool {
+			if v.VersionA == 2 && v.VersionB == 33 && v.VersionC == 0 && v.VersionD == 0 {
+				return true
+			}
+			return false
+		},
 	},
 	AttrStep[PcVolt]{
 		Def:   &PcVoltDef,
-		Label: "Estado de voltaje",
+		Label: "Estado de voltaje (esperado Normal)",
 		Value: func(v PcVolt) string { return v.State },
 		OK:    func(v PcVolt) bool { return v.State == "Normal" },
 	},
@@ -419,32 +451,89 @@ var SeqCmd = []ATExec{
 	},
 	AttrStep[CFun]{
 		Def:   &CFunDef,
-		Label: "Modo de operatividad general del módem (AT+CFUN)",
-		Value: func(v CFun) string { return fmt.Sprintf("%d", v.Mode) },
-		OK:    func(v CFun) bool { return v.Mode != 0 },
+		Label: "Modo de operatividad general del módem",
+		Value: func(v CFun) string {
+			switch v.Mode {
+			case 0:
+				return "Modo bajo consumo"
+			case 1:
+				return "En linea"
+			case 4:
+				return "Modo bajo consumo"
+			case 5:
+				return "Modo de solo datos"
+			case 6:
+				return "Reinicia el modem"
+			case 7:
+				return "Fuera de línea"
+			default:
+				return fmt.Sprintf("Modo desconocido (%d)", v.Mode)
+			}
+		},
+
+		OK: func(v CFun) bool { return v.Mode == 1 },
 	},
 	AttrStep[CGReg]{
 		Def:   &CGRegDef,
-		Label: "Registrado en la red celular (voz) (AT+CREG)",
-		Value: func(v CGReg) string { return fmt.Sprintf("%d", v.Stat) },
-		OK:    func(v CGReg) bool { return v.Stat == 1 },
+		Label: "Registrado en la red celular (voz)",
+		Value: func(v CGReg) string {
+			switch v.Stat {
+			case 0:
+				return "0 (No registrado)"
+			case 1:
+				return "1 (Registrado)"
+			case 2:
+				return "2 (Buscando red)"
+			case 3:
+				return "3 (Registro denegado)"
+			case 4:
+				return "4 (Estado desconocido)"
+			case 5:
+				return "5 (Registrado - roaming)"
+			default:
+				return fmt.Sprintf("%d (No definido)", v.Stat)
+			}
+		},
+		OK: func(v CGReg) bool { return v.Stat == 1 },
 	},
 	AttrStep[CReg]{
 		Def:   &CRegDef,
-		Label: "Registrado en la red celular (datos) (AT+CGREG)",
-		Value: func(v CReg) string { return fmt.Sprintf("%d", v.Stat) },
-		OK:    func(v CReg) bool { return v.Stat == 1 },
+		Label: "Registrado en la red celular (datos)",
+		Value: func(v CReg) string {
+			switch v.Stat {
+			case 0:
+				return "0 (No registrado)"
+			case 1:
+				return "1 (Registrado)"
+			case 2:
+				return "2 (Buscando red)"
+			case 3:
+				return "3 (Registro denegado)"
+			case 4:
+				return "4 (Estado desconocido)"
+			case 5:
+				return "5 (Registrado - roaming)"
+			default:
+				return fmt.Sprintf("%d (No definido)", v.Stat)
+			}
+		},
+		OK: func(v CReg) bool { return v.Stat == 1 },
 	},
-
+	AttrStep[GStatus]{
+		Def:   &GStatusDef,
+		Label: "Modo de red móvil",
+		Value: func(v GStatus) string { return v.SysPS },
+		OK:    func(v GStatus) bool { return v.SysPS == "LTE" },
+	},
 	AttrStep[GetBand]{
 		Def:   &GetBandDef,
-		Label: "Banda activa (AT!GETBAND)",
+		Label: "Banda activa",
 		Value: func(v GetBand) string { return v.Band },
 		OK:    func(v GetBand) bool { return !strings.Contains(v.Band, "No") },
 	},
 	AttrStep[CGDCont]{
 		Def:   &CGDContDef,
-		Label: "APN (AT+CGDCONT)",
+		Label: "APN",
 		Value: func(v CGDCont) string {
 			if strings.Contains(v.APN, "NEBULAENGINEERING.tigo.com") {
 				return v.APN
@@ -453,21 +542,40 @@ var SeqCmd = []ATExec{
 		},
 		OK: func(v CGDCont) bool { return strings.Contains(v.APN, "NEBULAENGINEERING.tigo.com") },
 	},
+	AttrStep[GStatus]{
+		Def:   &GStatusDef,
+		Label: "Potencia señal Red movil (RSRP) (> -100 dBm )",
+		Value: func(v GStatus) string { return fmt.Sprintf("%d dBm", v.RSRP) },
+		OK:    func(v GStatus) bool { return v.RSRP > -100 },
+	},
+	AttrStep[GStatus]{
+		Def:   &GStatusDef,
+		Label: "Calidad de la señal Red movil (RSRQ) (> -20 dB)",
+		Value: func(v GStatus) string { return fmt.Sprintf("%02.2f dB", v.RSRQ) },
+		OK:    func(v GStatus) bool { return v.RSRQ > -20 },
+	},
+	AttrStep[GStatus]{
+		Def:   &GStatusDef,
+		Label: "Ruido de la señal Red movil (> 0 dB)",
+		Value: func(v GStatus) string { return fmt.Sprintf("%02.2f dB", v.SINR) },
+		OK:    func(v GStatus) bool { return v.SINR > 0 },
+	},
+
 	AttrStep[GPSAtInfo]{
 		Def:   &GPSAtInfoDef,
-		Label: "Número de satélites visibles (> 6)",
+		Label: "Número de todos satélites visibles (> 6)",
 		Value: func(v GPSAtInfo) string { return fmt.Sprintf("%d", v.InView) },
 		OK:    func(v GPSAtInfo) bool { return v.InView > 6 },
 	},
 	AttrStep[GPSAtInfo]{
 		Def:   &GPSAtInfoDef,
-		Label: "SNR promedio de satélites visibles (> 20 dB)",
+		Label: "SNR promedio de todos satélites visibles (> 20 dB)",
 		Value: func(v GPSAtInfo) string { return fmt.Sprintf("%.2f dB", v.AvgSNR) },
 		OK:    func(v GPSAtInfo) bool { return v.AvgSNR > 20 },
 	},
 	AttrStep[Want]{
 		Def:   &WantDef,
-		Label: "Alimentación de la antena GPS (AT+WANT)",
+		Label: "Salida de la alimentación de la antena GPS ",
 		Value: func(v Want) string { return fmt.Sprintf("%d", v.value) },
 		OK:    func(v Want) bool { return v.value == 1 },
 	},

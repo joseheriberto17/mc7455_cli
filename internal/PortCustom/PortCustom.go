@@ -4,8 +4,10 @@ package PortCustom
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -38,7 +40,7 @@ func (dev *SerialPort) OpenePort() {
 	}
 	dev.Port = port
 
-	// Configurar tiempo de espera
+	// Configurar tiempo de espera por defecto 2 segundos
 	err = dev.Port.SetReadTimeout(2 * time.Second)
 	if err != nil {
 		log.Fatalf("error al definir un timeout en la lectura del puerto %s: %v", dev.Name, err)
@@ -49,12 +51,13 @@ func (dev *SerialPort) OpenePort() {
 	if err != nil {
 		log.Fatalf("error al limpiar el buffer de entrada al puerto %s: %v", dev.Name, err)
 	}
+
 	err = dev.Port.ResetOutputBuffer()
 	if err != nil {
 		log.Fatalf("error al limpiar el buffer de salida al puerto %s: %v", dev.Name, err)
 	}
 
-	// // test
+	// // test debug
 	// fmt.Printf("puerto abierto %s\n\r", dev.Name)
 }
 
@@ -126,6 +129,35 @@ func (dev *SerialPort) ReadUntil(timeout time.Duration) (string, error) {
 	// fmt.Printf("lectura en crudo: %q\n", sb.String())
 	return sb.String(), nil
 
+}
+
+// ReadPrefix lee hasta que encuentre las lineas que contiene GPGGA
+func (dev *SerialPort) ReadPrefix(timeout time.Duration) (string, error) {
+	reader := bufio.NewReader(dev.Port)
+	dev.Port.SetReadTimeout(timeout)
+
+	// despues de 5 intentos de lectura, deberia encontrar una linea con GPGGA
+	// si no, devuelve un espacio en blanco
+	for range 5 {
+		line, err := reader.ReadString('\n')
+
+		// El error ErrDeadlineExceeded indica que se ha alcanzado el tiempo de espera
+		if err != nil {
+			fmt.Printf("error de ReadString: %v\n", err)
+			if !errors.Is(err, os.ErrDeadlineExceeded) {
+				break
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "$GPGGA") {
+			// strings.TrimRight elimina los caracteres de nueva línea y retorno de carro
+			lines := strings.TrimRight(line, "\r\n")
+			// test
+			// fmt.Printf("lectura en crudo: %q\n", line)
+			return lines, nil
+		}
+	}
+	return " ", nil
 }
 
 // SendCommand envía un comando y devuelve la respuesta completa
